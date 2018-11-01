@@ -1,4 +1,19 @@
 # Databricks notebook source
+# MAGIC %md
+# MAGIC 1. Add the following Python Libraries to the Databricks Workspace
+# MAGIC     <code>
+# MAGIC     - Click on "Workspace" > "Shared" > "Create Library" > "Upload Python Egg or PyPi" <br>
+# MAGIC       azure-cognitiveservices-vision-customvision <br>
+# MAGIC     - Create a new library from Maven coordinates in your workspace.<br>
+# MAGIC       For the coordinates use: Azure:mmlspark:0.14
+# MAGIC     </code>
+# MAGIC     Select "Automatically attach to all clusters"<br>
+# MAGIC     Ensure that your Spark cluster has at least Spark 2.1 and Scala 2.11.<br>
+# MAGIC 2. Deploy Bing Search API, Custom Vision API services using the Azure Portal (portal.azure.com)<br>
+# MAGIC    Fetch the Bing Search Key, Custom Vision Training Key, and Custom Vision Prediction Key from the corresponding services and paste them in the textboxes at the top.
+
+# COMMAND ----------
+
 dbutils.widgets.text("bing_search_api_key", "", "Bing Search API Key:")
 dbutils.widgets.text("custom_vision_training_key", "", "Custom Vision Training Key:")
 dbutils.widgets.text("custom_vision_prediction_key", "", "Custom Vision Prediction Key:")
