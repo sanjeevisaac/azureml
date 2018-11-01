@@ -1,6 +1,7 @@
 # Databricks notebook source
 dbutils.widgets.text("bing_search_api_key", "", "Bing Search API Key:")
-BING_IMAGE_SEARCH_KEY = dbutils.widgets.get("bing_search_api_key")
+dbutils.widgets.text("custom_vision_training_key", "", "Custom Vision Training Key:")
+dbutils.widgets.text("custom_vision_prediction_key", "", "Custom Vision Prediction Key:")
 
 # COMMAND ----------
 
@@ -9,6 +10,7 @@ from mmlspark import FluentAPI
 import os
 from pyspark.sql.functions import lit
 
+BING_IMAGE_SEARCH_KEY = dbutils.widgets.get("bing_search_api_key")
 def bingPhotoSearch(name, queries, pages):
   offsets = [offset*10 for offset in range(0, pages)] 
   parameters = [(query, offset) for offset in offsets for query in queries]
@@ -84,6 +86,68 @@ tr:nth-child(even) {
 
 # COMMAND ----------
 
-totesQueries = ["site:bloomingdales.com Totes"]
-totesUrls = bingPhotoSearch("handbags:totes", totesQueries, pages=100)
-displayDF(totesUrls)
+from azure.cognitiveservices.vision.customvision.training import training_api
+from azure.cognitiveservices.vision.customvision.training.models import ImageUrlCreateEntry
+
+CUSTOM_VISION_TRAINING_KEY = dbutils.widgets.get("custom_vision_training_key")
+CUSTOM_VISION_PREDICTION_KEY = dbutils.widgets.get("custom_vision_prediction_key")
+
+trainer = training_api.TrainingApi(CUSTOM_VISION_TRAINING_KEY)
+projects = trainer.get_projects()
+project = next((project for project in projects if project.name == "ShoeStyleTagger"), None)
+if project == None:
+  # Create a new project
+  project = trainer.create_project("ShoeStyleTagger")
+
+# COMMAND ----------
+
+style_tag_sandals = trainer.create_tag(project.id, "sandals")
+style_tag_slippers = trainer.create_tag(project.id, "slippers")
+style_tag_sneakers = trainer.create_tag(project.id, "sneakers")
+style_tag_boots = trainer.create_tag(project.id, "boots")
+
+# COMMAND ----------
+
+sandalsQueries = ["site:bloomingdales.com Sandals"]
+sandalsUrls = bingPhotoSearch(style_tag_sandals.id, sandalsQueries, pages=100)
+displayDF(sandalsUrls)
+
+# COMMAND ----------
+
+slippersQueries = ["site:bloomingdales.com Slippers"]
+slippersUrls = bingPhotoSearch(style_tag_slippers.id, slippersQueries, pages=100)
+displayDF(slippersUrls)
+
+# COMMAND ----------
+
+sneakersQueries = ["site:bloomingdales.com Sneakers"]
+sneakersUrls = bingPhotoSearch(style_tag_sneakers.id, sneakersQueries, pages=100)
+displayDF(sneakersUrls)
+
+# COMMAND ----------
+
+bootsQueries = ["site:bloomingdales.com Boots"]
+bootsUrls = bingPhotoSearch(style_tag_boots.id, bootsQueries, pages=100)
+displayDF(bootsUrls)
+
+# COMMAND ----------
+
+sandalsDF = sandalsUrls.toPandas().set_index('urls').T.to_dict('list')
+slippersDF = slippersUrls.toPandas().set_index('urls').T.to_dict('list')
+sneakersDF = sneakersUrls.toPandas().set_index('urls').T.to_dict('list')
+bootsDF = bootsUrls.toPandas().set_index('urls').T.to_dict('list')
+
+# COMMAND ----------
+
+bootsDF
+
+# COMMAND ----------
+
+print(project.id)
+
+# COMMAND ----------
+
+for boots in bootsDF:
+    product_img_link = boots
+    tagList = bootsDF[boots]
+    trainer.create_images_from_urls(project.id, [ImageUrlCreateEntry(url=product_img_link,tag_ids=tagList)])
