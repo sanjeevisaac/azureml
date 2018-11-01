@@ -108,25 +108,25 @@ style_tag_boots = trainer.create_tag(project.id, "boots")
 
 # COMMAND ----------
 
-sandalsQueries = ["site:bloomingdales.com Sandals"]
+sandalsQueries = ["site:bloomingdales.com Womens Sandals"]
 sandalsUrls = bingPhotoSearch(style_tag_sandals.id, sandalsQueries, pages=100)
 displayDF(sandalsUrls)
 
 # COMMAND ----------
 
-slippersQueries = ["site:bloomingdales.com Slippers"]
+slippersQueries = ["site:bloomingdales.com Womens Slippers"]
 slippersUrls = bingPhotoSearch(style_tag_slippers.id, slippersQueries, pages=100)
 displayDF(slippersUrls)
 
 # COMMAND ----------
 
-sneakersQueries = ["site:bloomingdales.com Sneakers"]
+sneakersQueries = ["site:bloomingdales.com Womens Sneakers"]
 sneakersUrls = bingPhotoSearch(style_tag_sneakers.id, sneakersQueries, pages=100)
 displayDF(sneakersUrls)
 
 # COMMAND ----------
 
-bootsQueries = ["site:bloomingdales.com Boots"]
+bootsQueries = ["site:bloomingdales.com Womens Boots"]
 bootsUrls = bingPhotoSearch(style_tag_boots.id, bootsQueries, pages=100)
 displayDF(bootsUrls)
 
@@ -143,11 +143,65 @@ bootsDF
 
 # COMMAND ----------
 
-print(project.id)
+from itertools import islice
+product_img_links = list(islice(sneakersDF, 64))
+for sneakers in list(islice(sneakersDF, 64)):
+    product_img_link = sneakers
+    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
+    tagList = sneakersDF[sneakers]
+    summary = trainer.create_images_from_urls(project.id, [ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_sneakers.id])])
+    print(summary.is_batch_successful, product_img_link)
 
 # COMMAND ----------
 
-for boots in bootsDF:
+from itertools import islice
+product_img_links = list(islice(bootsDF, 64))
+training_images = []
+for boots in list(islice(bootsDF, 64)):
     product_img_link = boots
+    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
     tagList = bootsDF[boots]
-    trainer.create_images_from_urls(project.id, [ImageUrlCreateEntry(url=product_img_link,tag_ids=tagList)])
+    training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_boots.id]))
+summary = trainer.create_images_from_urls(project.id, training_images)
+print(summary.is_batch_successful, summary.status)
+
+# COMMAND ----------
+
+from itertools import islice
+product_img_links = list(islice(slippersDF, 64))
+training_images = []
+for slippers in list(islice(slippersDF, 64)):
+    product_img_link = slippers
+    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
+    tagList = slippersDF[slippers]
+    training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_slippers.id]))
+summary = trainer.create_images_from_urls(project.id, training_images)
+print(summary.is_batch_successful)
+
+# COMMAND ----------
+
+from itertools import islice
+product_img_links = list(islice(sandalsDF, 64))
+training_images = []
+for sandals in list(islice(sandalsDF, 64)):
+    product_img_link = sandals
+    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
+    tagList = sandalsDF[sandals]
+    training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_sandals.id]))
+summary = trainer.create_images_from_urls(project.id, training_images)
+print(summary.is_batch_successful)
+
+# COMMAND ----------
+
+import time
+
+print ("Training...")
+iteration = trainer.train_project(project.id)
+while (iteration.status != "Completed"):
+    iteration = trainer.get_iteration(project.id, iteration.id)
+    print ("Training status: " + iteration.status)
+    time.sleep(1)
+
+# The iteration is now trained. Make it the default project endpoint
+trainer.update_iteration(project.id, iteration.id, is_default=True)
+print ("Done!")
