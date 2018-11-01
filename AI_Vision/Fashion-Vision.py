@@ -176,7 +176,6 @@ for slippers in list(islice(slippersDF, 64)):
     tagList = slippersDF[slippers]
     training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_slippers.id]))
 summary = trainer.create_images_from_urls(project.id, training_images)
-print(summary.is_batch_successful)
 
 # COMMAND ----------
 
@@ -205,3 +204,25 @@ while (iteration.status != "Completed"):
 # The iteration is now trained. Make it the default project endpoint
 trainer.update_iteration(project.id, iteration.id, is_default=True)
 print ("Done!")
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Try this image for prediction:<br> "https://tse2.mm.bing.net/th?id=OIP.QpxuXic1_vcHKsSO7cwkQwHaHa&pid=Api"<br>
+# MAGIC <img src="https://tse2.mm.bing.net/th?id=OIP.QpxuXic1_vcHKsSO7cwkQwHaHa&pid"></img>
+
+# COMMAND ----------
+
+from azure.cognitiveservices.vision.customvision.prediction import prediction_endpoint
+from azure.cognitiveservices.vision.customvision.prediction.prediction_endpoint import models
+
+# Now there is a trained endpoint that can be used to make a prediction
+
+predictor = prediction_endpoint.PredictionEndpoint(CUSTOM_VISION_PREDICTION_KEY)
+
+test_img_url = "https://tse2.mm.bing.net/th?id=OIP.QpxuXic1_vcHKsSO7cwkQwHaHa&pid=Api"
+results = predictor.predict_image_url(project.id, iteration.id, url=test_img_url)
+
+# Display the results.
+for prediction in results.predictions:
+    print ("\t" + prediction.tag_name + ": {0:.2f}%".format(prediction.probability * 100))
