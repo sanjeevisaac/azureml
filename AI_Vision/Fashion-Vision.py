@@ -109,101 +109,84 @@ CUSTOM_VISION_PREDICTION_KEY = dbutils.widgets.get("custom_vision_prediction_key
 
 trainer = training_api.TrainingApi(CUSTOM_VISION_TRAINING_KEY)
 projects = trainer.get_projects()
+tag_dict = {}
 project = next((project for project in projects if project.name == "ShoeStyleTagger"), None)
 if project == None:
   # Create a new project
   project = trainer.create_project("ShoeStyleTagger")
+  tag_dict["sandals"] = trainer.create_tag(project.id, "sandals")
+  tag_dict["slippers"] = trainer.create_tag(project.id, "slippers")
+  tag_dict["sneakers"] = trainer.create_tag(project.id, "sneakers")
+  tag_dict["boots"] = trainer.create_tag(project.id, "boots")
+else:
+  tags = trainer.get_tags(project.id)
+  tag_dict = dict(((tag.name, tag) for tag in tags))
 
 # COMMAND ----------
 
-style_tag_sandals = trainer.create_tag(project.id, "sandals")
-style_tag_slippers = trainer.create_tag(project.id, "slippers")
-style_tag_sneakers = trainer.create_tag(project.id, "sneakers")
-style_tag_boots = trainer.create_tag(project.id, "boots")
+tag_dict
 
 # COMMAND ----------
 
 sandalsQueries = ["site:bloomingdales.com Womens Sandals"]
-sandalsUrls = bingPhotoSearch(style_tag_sandals.id, sandalsQueries, pages=100)
+sandalsUrls = bingPhotoSearch(tag_dict["sandals"].id, sandalsQueries, pages=100)
 displayDF(sandalsUrls)
 
 # COMMAND ----------
 
 slippersQueries = ["site:bloomingdales.com Womens Slippers"]
-slippersUrls = bingPhotoSearch(style_tag_slippers.id, slippersQueries, pages=100)
+slippersUrls = bingPhotoSearch(tag_dict["slippers"].id, slippersQueries, pages=100)
 displayDF(slippersUrls)
 
 # COMMAND ----------
 
 sneakersQueries = ["site:bloomingdales.com Womens Sneakers"]
-sneakersUrls = bingPhotoSearch(style_tag_sneakers.id, sneakersQueries, pages=100)
+sneakersUrls = bingPhotoSearch(tag_dict["sneakers"].id, sneakersQueries, pages=100)
 displayDF(sneakersUrls)
 
 # COMMAND ----------
 
 bootsQueries = ["site:bloomingdales.com Womens Boots"]
-bootsUrls = bingPhotoSearch(style_tag_boots.id, bootsQueries, pages=100)
+bootsUrls = bingPhotoSearch(tag_dict["boots"].id, bootsQueries, pages=100)
 displayDF(bootsUrls)
 
 # COMMAND ----------
 
-sandalsDF = sandalsUrls.toPandas().set_index('urls').T.to_dict('list')
-slippersDF = slippersUrls.toPandas().set_index('urls').T.to_dict('list')
-sneakersDF = sneakersUrls.toPandas().set_index('urls').T.to_dict('list')
-bootsDF = bootsUrls.toPandas().set_index('urls').T.to_dict('list')
+imageUrls = sandalsUrls.union(slippersUrls).union(sneakersUrls).union(bootsUrls).repartition(2)\
+  .dropna()
 
 # COMMAND ----------
 
-bootsDF
+imageUrls.count()
 
 # COMMAND ----------
 
-from itertools import islice
-product_img_links = list(islice(sneakersDF, 64))
-for sneakers in list(islice(sneakersDF, 64)):
-    product_img_link = sneakers
-    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
-    tagList = sneakersDF[sneakers]
-    summary = trainer.create_images_from_urls(project.id, [ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_sneakers.id])])
-    print(summary.is_batch_successful, product_img_link)
+from pyspark.ml import Pipeline, Transformer
+from typing import Iterable
+# CUSTOM TRANSFORMER
+class UploadToCustomVision(Transformer):
+    """
+    A Custom Transformer which uploads the images to Custom Vision Project along with the tags
+    """
+
+    def __init__(self, project_id=None):
+        super(UploadToCustomVision, self).__init__()
+        self.project_id = project_id
+
+    def _transform(self, df: DataFrame) -> DataFrame:
+        imagesDF = df.toPandas().set_index('urls').T.to_dict('list')
+        for img in imagesDF:
+          product_img_link = img
+          product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
+          tagList = imagesDF[img]
+          summary = trainer.create_images_from_urls(self.project_id, [ImageUrlCreateEntry(url=product_img_link,tag_ids=tagList)])
+        return df
+
 
 # COMMAND ----------
 
-from itertools import islice
-product_img_links = list(islice(bootsDF, 64))
-training_images = []
-for boots in list(islice(bootsDF, 64)):
-    product_img_link = boots
-    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
-    tagList = bootsDF[boots]
-    training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_boots.id]))
-summary = trainer.create_images_from_urls(project.id, training_images)
-print(summary.is_batch_successful, summary.status)
-
-# COMMAND ----------
-
-from itertools import islice
-product_img_links = list(islice(slippersDF, 64))
-training_images = []
-for slippers in list(islice(slippersDF, 64)):
-    product_img_link = slippers
-    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
-    tagList = slippersDF[slippers]
-    training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_slippers.id]))
-summary = trainer.create_images_from_urls(project.id, training_images)
-
-# COMMAND ----------
-
-from itertools import islice
-product_img_links = list(islice(sandalsDF, 64))
-training_images = []
-for sandals in list(islice(sandalsDF, 64)):
-    product_img_link = sandals
-    product_img_link = product_img_link.replace("bloomingdales.com", "bloomingdalesassets.com")
-    tagList = sandalsDF[sandals]
-    training_images.append(ImageUrlCreateEntry(url=product_img_link,tag_ids=[style_tag_sandals.id]))
-summary = trainer.create_images_from_urls(project.id, training_images)
-print(summary.is_batch_successful)
+custom_vision_upload = UploadToCustomVision(project_id = project.id)
+df_with_result = custom_vision_upload.transform(imageUrls)
 
 # COMMAND ----------
 
@@ -241,3 +224,143 @@ results = predictor.predict_image_url(project.id, iteration.id, url=test_img_url
 # Display the results.
 for prediction in results.predictions:
     print ("\t" + prediction.tag_name + ": {0:.2f}%".format(prediction.probability * 100))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC Export the model to run on edge/mobile: <br>
+# MAGIC https://github.com/MicrosoftDocs/azure-docs/blob/master/articles/cognitive-services/Custom-Vision-Service/export-model-python.md
+
+# COMMAND ----------
+
+# MAGIC %fs
+# MAGIC ls /FileStore/tables/model.pb 
+
+# COMMAND ----------
+
+# MAGIC %fs
+# MAGIC ls /FileStore/tables/labels.txt 
+
+# COMMAND ----------
+
+# MAGIC %sh
+# MAGIC ls -lt /dbfs/FileStore/tables/
+
+# COMMAND ----------
+
+import tensorflow as tf
+import os
+
+filename = '/dbfs/FileStore/tables/model.pb'
+labels_filename = '/dbfs/FileStore/tables/labels.txt'
+
+graph_def = tf.GraphDef()
+labels = []
+
+# Import the TF graph
+with tf.gfile.FastGFile(filename, 'rb') as f:
+    graph_def.ParseFromString(f.read())
+    tf.import_graph_def(graph_def, name='')
+
+# Create a list of labels.
+with open(labels_filename, 'rt') as lf:
+    for l in lf:
+        labels.append(l.strip())
+
+# COMMAND ----------
+
+def convert_to_opencv(image):
+    # RGB -> BGR conversion is performed as well.
+    r,g,b = np.array(image).T
+    opencv_image = np.array([b,g,r]).transpose()
+    return opencv_image
+
+def crop_center(img,cropx,cropy):
+    h, w = img.shape[:2]
+    startx = w//2-(cropx//2)
+    starty = h//2-(cropy//2)
+    return img[starty:starty+cropy, startx:startx+cropx]
+
+def resize_down_to_1600_max_dim(image):
+    h, w = image.shape[:2]
+    if (h < 1600 and w < 1600):
+        return image
+
+    new_size = (1600 * w // h, 1600) if (h > w) else (1600, 1600 * h // w)
+    return cv2.resize(image, new_size, interpolation = cv2.INTER_LINEAR)
+
+def resize_to_256_square(image):
+    h, w = image.shape[:2]
+    return cv2.resize(image, (256, 256), interpolation = cv2.INTER_LINEAR)
+
+def update_orientation(image):
+    exif_orientation_tag = 0x0112
+    if hasattr(image, '_getexif'):
+        exif = image._getexif()
+        if (exif != None and exif_orientation_tag in exif):
+            orientation = exif.get(exif_orientation_tag, 1)
+            # orientation is 1 based, shift to zero based and flip/transpose based on 0-based values
+            orientation -= 1
+            if orientation >= 4:
+                image = image.transpose(Image.TRANSPOSE)
+            if orientation == 2 or orientation == 3 or orientation == 6 or orientation == 7:
+                image = image.transpose(Image.FLIP_TOP_BOTTOM)
+            if orientation == 1 or orientation == 2 or orientation == 5 or orientation == 6:
+                image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    return image
+
+# COMMAND ----------
+
+from PIL import Image
+import numpy as np
+import cv2
+
+# Load from a file
+imageFile = "/dbfs/FileStore/tables/testshoe.jpg"
+image = Image.open(imageFile)
+
+# Update orientation based on EXIF tags, if the file has orientation info.
+image = update_orientation(image)
+
+# Convert to OpenCV format
+image = convert_to_opencv(image)
+
+# COMMAND ----------
+
+# If the image has either w or h greater than 1600 we resize it down respecting
+# aspect ratio such that the largest dimension is 1600
+image = resize_down_to_1600_max_dim(image)
+# We next get the largest center square
+h, w = image.shape[:2]
+min_dim = min(w,h)
+max_square_image = crop_center(image, min_dim, min_dim)
+# Resize that square down to 256x256
+augmented_image = resize_to_256_square(max_square_image)
+# The compact models have a network size of 227x227, the model requires this size.
+network_input_size = 227
+
+# Crop the center for the specified network_input_Size
+augmented_image = crop_center(augmented_image, network_input_size, network_input_size)
+
+# COMMAND ----------
+
+# These names are part of the model and cannot be changed.
+output_layer = 'loss:0'
+input_node = 'Placeholder:0'
+
+with tf.Session() as sess:
+    prob_tensor = sess.graph.get_tensor_by_name(output_layer)
+    predictions, = sess.run(prob_tensor, {input_node: [augmented_image] })
+
+# COMMAND ----------
+
+# Print the highest probability label
+highest_probability_index = np.argmax(predictions)
+print('Classified as: ' + labels[highest_probability_index])
+
+# Or you can print out all of the results mapping labels to probabilities.
+label_index = 0
+for p in predictions:
+    truncated_probablity = np.float64(np.round(p,8))
+    print (labels[label_index], truncated_probablity)
+    label_index += 1
